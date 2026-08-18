@@ -1,0 +1,23 @@
+ALTER TABLE IF EXISTS emails
+  ADD COLUMN IF NOT EXISTS smtp_message_id TEXT;
+
+ALTER TABLE IF EXISTS emails
+  ADD COLUMN IF NOT EXISTS smtp_preview_url TEXT;
+
+ALTER TABLE IF EXISTS senders
+  ADD COLUMN IF NOT EXISTS smtp_host VARCHAR(255);
+
+ALTER TABLE IF EXISTS senders
+  ADD COLUMN IF NOT EXISTS smtp_port INTEGER;
+
+ALTER TABLE IF EXISTS senders
+  ADD COLUMN IF NOT EXISTS smtp_secure BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE IF EXISTS senders
+  ADD COLUMN IF NOT EXISTS smtp_user VARCHAR(320);
+
+ALTER TABLE IF EXISTS senders
+  ADD COLUMN IF NOT EXISTS smtp_password TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_emails_smtp_message_id ON emails (smtp_message_id);
+CREATE INDEX IF NOT EXISTS idx_senders_smtp_user ON senders (smtp_user);
