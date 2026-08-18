@@ -17,6 +17,48 @@ import type { EmailJobData, EmailJobResult } from '../types/queue.types.js';
 
 const EMAIL_WORKER_QUEUE_NAME = 'email-scheduler';
 const PROCESSING_RETRY_DELAY_MS = 15_000;
+const SEND_THROTTLE_KEY = 'email-send-throttle:last-slot';
+
+const RESERVE_SEND_SLOT_LUA = `
+local key = KEYS[1]
+local nowMs = tonumber(ARGV[1])
+local delayMs = tonumber(ARGV[2])
+
+local lastSlot = tonumber(redis.call('GET', key)) or 0
+local targetSlot = nowMs
+
+if lastSlot > 0 and (lastSlot + delayMs) > targetSlot then
+  targetSlot = lastSlot + delayMs
+end
+
+local ttlMs = math.max(delayMs * 10, 60000)
+redis.call('SET', key, tostring(targetSlot), 'PX', ttlMs)
+
+return targetSlot
+`;
+
+const redisEval = redis as unknown as {
+  eval: (...args: Array<string | number>) => Promise<unknown>;
+};
+
+const reserveMinimumSendSlot = async (delayMs: number): Promise<void> => {
+  if (delayMs <= 0) return;
+
+  const nowMs = Date.now();
+  const rawSlot = await redisEval.eval(
+    RESERVE_SEND_SLOT_LUA,
+    1,
+    SEND_THROTTLE_KEY,
+    String(nowMs),
+    String(delayMs)
+  );
+  const reservedSlot = Number(rawSlot ?? nowMs);
+
+  const waitTimeMs = reservedSlot - Date.now();
+  if (waitTimeMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, waitTimeMs));
+  }
+};
 
 const getWorkerConcurrency = (): number => {
   const rawConcurrency = Number(process.env.WORKER_CONCURRENCY ?? '5');
@@ -103,6 +145,8 @@ export const startEmailWorker = async (): Promise<Worker<EmailJobData, EmailJobR
         await markEmailScheduledForRetry(emailId, 'Hourly sender rate limit reached', rateLimit.nextAvailableAt);
         await scheduleCurrentJobForLater(job, token, rateLimit.nextAvailableAt);
       }
+
+      await reserveMinimumSendSlot(env.EMAIL_DELAY_MS);
 
       console.info(`[SMTP] Sending email ${emailId}`);
 

@@ -1,129 +1,147 @@
-# ReachInbox Email Scheduler Backend
+# ReachInbox Email Scheduler (Full-Stack)
 
-## Overview
+A full-stack, production-quality email scheduling application built with **React**, **TypeScript**, **Vite**, **Tailwind CSS**, **Express**, **PostgreSQL**, **Redis**, **BullMQ**, and **Ethereal SMTP**.
 
-This backend implements delayed email scheduling with Express, PostgreSQL, Redis, BullMQ, and Ethereal SMTP.
+---
 
-No cron jobs are used.
+## Features & Highlights
 
-## Architecture
+### Frontend
+- **Google OAuth Authentication**: Real Google Sign-In via `@react-oauth/google` with persistent user sessions and profile avatar display. Also includes a quick Evaluator Mode sign-in.
+- **ReachInbox Dashboard**: Professional dark mode UI with live statistics cards for Scheduled Emails, Sent Emails, Delivery Success Rate, and System Status.
+- **Compose Email Campaign**:
+  - Drag-and-drop CSV / Text file upload with automatic recipient email extraction & regex validation.
+  - Live detected email counter.
+  - Future schedule time picker.
+  - Configurable minimum delay between emails (in seconds) & hourly rate limit.
+  - Real-time client-side validation and toast notification feedback.
+- **Scheduled Emails Table**: Filterable view of queued emails with recipient, subject, scheduled time, and status badge (`scheduled`, `processing`).
+- **Sent Emails Table**: Detailed log of completed and failed deliveries with sent timestamps, status tags (`sent`, `failed`), and direct Ethereal SMTP preview links.
 
-- API layer: Express routes/controllers validate requests and call the scheduler service.
-- Persistence: PostgreSQL stores users, senders, campaigns, emails, statuses, and delivery metadata.
-- Queueing: BullMQ stores delayed jobs in Redis.
-- Worker: BullMQ worker claims, rate-limits, sends, and updates statuses.
-- SMTP: Ethereal-compatible transport via Nodemailer.
+### Backend
+- **Asynchronous Queue Engine**: Driven by BullMQ and Redis with delayed jobs (no cron jobs used).
+- **PostgreSQL Persistence**: Full transactional persistence for campaigns, senders, emails, and delivery logs.
+- **Hourly Rate Limiting**: Atomic Redis Lua script rate limiter per sender window.
+- **Idempotency & Send-Once Protection**: Sha256 idempotency key generation & atomic DB state transitions (`scheduled` -> `processing` -> `sent`).
+- **Restart Recovery**: Automatic startup recovery scanner for queue resilience.
 
-## Scheduling Flow
+---
 
-1. `POST /api/emails/schedule` validates input.
-2. Service creates or reuses sender configuration for the requesting sender email.
-3. Campaign and email rows are created in one PostgreSQL transaction.
-4. Each recipient gets a deterministic BullMQ job ID based on email ID.
-5. Worker atomically claims each email before sending.
-6. Worker enforces Redis-backed hourly limits and can move jobs to a later window.
-7. Worker sends with sender-specific SMTP settings (or default Ethereal env fallback).
-8. Worker persists final status and SMTP metadata.
+## Project Structure
 
-## Delayed Jobs and Persistence
+```
+reachinbox-email-scheduler/
+├── backend/
+│   ├── src/
+│   │   ├── config/          # DB & Redis connection config
+│   │   ├── controllers/     # Express HTTP route controllers
+│   │   ├── db/              # PostgreSQL migrations & schema
+│   │   ├── routes/          # API route definitions
+│   │   ├── services/        # Email scheduler & repository logic
+│   │   └── workers/         # BullMQ queue processor worker
+│   ├── package.json
+│   └── tsconfig.json
+├── frontend/
+│   ├── src/
+│   │   ├── components/      # UI Primitives, Dashboard, Tables, Compose Modal
+│   │   ├── context/         # AuthContext & ToastContext
+│   │   ├── services/        # Type-safe API client (api.ts)
+│   │   └── types/           # Shared TypeScript interfaces
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── tsconfig.json
+└── README.md
+```
 
-- BullMQ delayed jobs are persisted in Redis.
-- Jobs survive server restarts because queue state is externalized to Redis.
-- Startup recovery scans PostgreSQL `scheduled` emails and recreates missing jobs idempotently.
+---
 
-## Worker Concurrency
+## Quick Start Guide
 
-- Controlled by `WORKER_CONCURRENCY`.
-- Multiple worker instances are supported.
-- Send-once protection uses an atomic DB transition from `scheduled` to `processing`.
+### Prerequisites
+- Node.js (v18+)
+- PostgreSQL database
+- Redis instance
 
-## Email Delay
+### 1. Backend Setup
 
-- `EMAIL_DELAY_MS` controls spacing between recipients in the same scheduling request.
-- For recipient index `i`, scheduled time is:
-  - `scheduled_at = base_start_time + i * EMAIL_DELAY_MS`
-- Negative delays are rejected.
+```bash
+cd backend
+npm install
+```
 
-## Hourly Rate Limiting
+Create a `.env` file inside `backend/`:
 
-- `MAX_EMAILS_PER_HOUR` is enforced with Redis atomic Lua logic.
-- Counter key format:
-  - `email-rate-limit:{senderScope}:{hourWindowStartMs}`
-- If capacity is exhausted:
-  - email is not dropped,
-  - status is returned to `scheduled`,
-  - job is moved to the next hour window.
+```env
+PORT=5000
+DATABASE_URL=postgresql://user:password@localhost:5432/reachinbox
+REDIS_HOST=localhost
+REDIS_PORT=6379
+WORKER_CONCURRENCY=5
+EMAIL_DELAY_MS=2000
+MAX_EMAILS_PER_HOUR=200
+```
 
-## Idempotency Strategy
+Run database migrations & start backend server:
 
-### Request idempotency
+```bash
+npm run db:migrate
+npm run dev
+```
 
-- Deterministic DB `idempotency_key` prevents duplicate records for the same sender/recipient/subject/scheduled_at tuple.
+The backend server runs at `http://localhost:5000`.
 
-### Send-once guard
+### 2. Frontend Setup
 
-- Worker uses atomic SQL claim:
-  - `scheduled -> processing` for one worker only.
-- If claim fails:
-  - `sent`: job is treated as completed and skipped,
-  - `processing`: job is safely delayed, not resent.
+```bash
+cd frontend
+npm install
+```
 
-## Restart Recovery
+Create a `.env` file inside `frontend/` (optional for custom Google Client ID):
 
-Startup runs one recovery pass:
+```env
+VITE_GOOGLE_CLIENT_ID=your_google_oauth_client_id.apps.googleusercontent.com
+```
 
-1. Query all `emails.status = 'scheduled'`.
-2. Build deterministic job ID (`email-{emailId}`).
-3. Check whether job already exists.
-4. Recreate only missing jobs with remaining delay.
+Start the frontend dev server:
 
-This covers the case where DB commit succeeded but queue enqueue failed.
+```bash
+npm run dev
+```
 
-## Multiple Sender Architecture
+Access the application in your browser at `http://localhost:3000`.
 
-- `senders` table stores sender identity and sender-specific SMTP fields.
-- Each scheduled email stores `sender_id` and `sender_email`.
-- Worker resolves SMTP config from `sender_id` first, then falls back to global Ethereal env configuration.
-- Sender SMTP passwords are never returned by API responses and are not logged.
+---
 
-## Ethereal SMTP
+## Verification & Build Commands
 
-- Default transport is driven by env variables:
-  - `ETHEREAL_HOST`
-  - `ETHEREAL_PORT`
-  - `ETHEREAL_USER`
-  - `ETHEREAL_PASSWORD`
-- On success, worker stores:
-  - `smtp_message_id`
-  - `smtp_preview_url`
+### Frontend Typecheck & Production Build
+```bash
+cd frontend
+npm run typecheck
+npm run build
+```
 
-## Failure and Retry Behavior
+### Backend Typecheck
+```bash
+cd backend
+npm run typecheck
+```
 
-- Queue defaults:
-  - retries: 3
-  - backoff: exponential (2s base)
-- Transient send failures:
-  - email is moved back to `scheduled` and retried.
-- Final failure after attempts are exhausted:
-  - email is marked `failed`.
+---
 
-## Trade-offs
+## 5-Minute Demo Flow
 
-- When a worker crashes after SMTP accept but before DB update, the record may remain `processing`. The worker avoids blind resends by not sending records already in `processing`.
-- Startup recovery is an idempotent one-time pass on startup, not a background poller.
-- Sender-specific host/port are supported in schema and resolver; assignment environments can still run with one global Ethereal account.
-
-## Key Environment Variables
-
-- `PORT`
-- `WORKER_CONCURRENCY`
-- `EMAIL_DELAY_MS`
-- `MAX_EMAILS_PER_HOUR`
-- `ETHEREAL_HOST`
-- `ETHEREAL_PORT`
-- `ETHEREAL_USER`
-- `ETHEREAL_PASSWORD`
-- `DATABASE_URL`
-- `REDIS_HOST`
-- `REDIS_PORT`
-- `REDIS_PASSWORD`
+1. **Sign In**:
+   - Open `http://localhost:3000`.
+   - Sign in using Google OAuth or click **Continue as Evaluator** for quick access.
+2. **Compose & Upload CSV**:
+   - Click **Compose Email** in the top navigation.
+   - Upload a CSV file containing emails or paste recipient email addresses. Notice the **Detected Email Addresses** counter automatically update.
+   - Fill in Subject, Body, and set the scheduled time to 1 minute in the future.
+   - Click **Schedule Campaign**.
+3. **View Scheduled Emails**:
+   - Navigate to the **Scheduled** tab to see your queued campaign items with status `Scheduled`.
+4. **Monitor Delivery & Sent Logs**:
+   - Once the scheduled time passes, BullMQ processes the queue jobs.
+   - Navigate to the **Sent Logs** tab to view completed email records and click **Ethereal View** to view the rendered email in Ethereal SMTP.
