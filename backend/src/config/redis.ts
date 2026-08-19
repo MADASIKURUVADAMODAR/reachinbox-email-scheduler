@@ -11,9 +11,14 @@ const redis = new Redis({
   host: redisHost,
   port: Number.isFinite(redisPort) && redisPort > 0 ? redisPort : 6379,
   password: redisPassword,
+
+  // Upstash Redis uses TLS for TCP connections
+  tls: {},
+
   lazyConnect: false,
   maxRetriesPerRequest: null,
   enableOfflineQueue: true,
+
   retryStrategy: (times: number) => Math.min(times * 200, 2000),
 });
 
