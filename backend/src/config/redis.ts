@@ -3,26 +3,26 @@ import Redis from 'ioredis';
 
 dotenv.config();
 
-const redisHost = process.env.REDIS_HOST ?? 'localhost';
-const redisPort = Number(process.env.REDIS_PORT ?? '6379');
-const redisPassword = process.env.REDIS_PASSWORD || undefined;
+const redisUrl = process.env.REDIS_URL;
+
+if (!redisUrl) {
+  throw new Error('REDIS_URL is not configured');
+}
 
 const redis = new Redis({
-  host: redisHost,
-  port: Number.isFinite(redisPort) && redisPort > 0 ? redisPort : 6379,
-  password: redisPassword,
+  ...new URL(redisUrl),
   lazyConnect: false,
   maxRetriesPerRequest: null,
   enableOfflineQueue: true,
   retryStrategy: (times: number) => Math.min(times * 200, 2000),
-});
+} as any);
 
 redis.on('connect', () => {
-  console.info(`[redis] Connected to Redis at ${redisHost}:${redisPort}.`);
+  console.info('[redis] Connected to Redis.');
 });
 
 redis.on('ready', () => {
-  console.info(`[redis] Redis is ready at ${redisHost}:${redisPort}.`);
+  console.info('[redis] Redis is ready.');
 });
 
 redis.on('error', (error: Error) => {
