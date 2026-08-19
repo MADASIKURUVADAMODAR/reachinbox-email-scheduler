@@ -1,147 +1,310 @@
 # ReachInbox Email Scheduler (Full-Stack)
 
-A full-stack, production-quality email scheduling application built with **React**, **TypeScript**, **Vite**, **Tailwind CSS**, **Express**, **PostgreSQL**, **Redis**, **BullMQ**, and **Ethereal SMTP**.
+A full-stack email scheduling application built with React, TypeScript, Vite, Tailwind CSS, Express, PostgreSQL, Redis, BullMQ, and Ethereal SMTP. The application allows users to create email campaigns, upload and validate recipients, schedule emails for future delivery, process emails asynchronously, apply sending limits, persist email state, and monitor scheduled and sent emails through a dashboard.
 
----
-
-## Features & Highlights
+## Features
 
 ### Frontend
-- **Google OAuth Authentication**: Real Google Sign-In via `@react-oauth/google` with persistent user sessions and profile avatar display. Also includes a quick Evaluator Mode sign-in.
-- **ReachInbox Dashboard**: Professional dark mode UI with live statistics cards for Scheduled Emails, Sent Emails, Delivery Success Rate, and System Status.
-- **Compose Email Campaign**:
-  - Drag-and-drop CSV / Text file upload with automatic recipient email extraction & regex validation.
-  - Live detected email counter.
-  - Future schedule time picker.
-  - Configurable minimum delay between emails (in seconds) & hourly rate limit.
-  - Real-time client-side validation and toast notification feedback.
-- **Scheduled Emails Table**: Filterable view of queued emails with recipient, subject, scheduled time, and status badge (`scheduled`, `processing`).
-- **Sent Emails Table**: Detailed log of completed and failed deliveries with sent timestamps, status tags (`sent`, `failed`), and direct Ethereal SMTP preview links.
+- Google OAuth authentication using @react-oauth/google.
+- Evaluator Mode for quick access.
+- Professional dark-mode ReachInbox dashboard.
+- Scheduled email statistics.
+- Sent email statistics.
+- Delivery rate monitoring.
+- System status monitoring.
+- Compose email campaign interface.
+- CSV/Text recipient upload.
+- Automatic email extraction and validation.
+- Detected recipient count.
+- Subject and email body input.
+- Future email scheduling.
+- Configurable minimum email delay.
+- Configurable hourly sending limit.
+- Scheduled email table.
+- Sent email logs.
+- Email delivery status.
+- Ethereal SMTP preview links.
 
 ### Backend
-- **Asynchronous Queue Engine**: Driven by BullMQ and Redis with delayed jobs (no cron jobs used).
-- **PostgreSQL Persistence**: Full transactional persistence for campaigns, senders, emails, and delivery logs.
-- **Hourly Rate Limiting**: Atomic Redis Lua script rate limiter per sender window.
-- **Idempotency & Send-Once Protection**: Sha256 idempotency key generation & atomic DB state transitions (`scheduled` -> `processing` -> `sent`).
-- **Restart Recovery**: Automatic startup recovery scanner for queue resilience.
+- Express REST API built with TypeScript.
+- BullMQ asynchronous email queue.
+- Redis-backed delayed jobs.
+- PostgreSQL persistent storage.
+- Sender-level hourly rate limiting.
+- Redis Lua based atomic send-slot reservation.
+- Email idempotency and send-once protection.
+- Atomic email state transitions.
+- SMTP email delivery through Ethereal.
+- Retry handling with BullMQ attempts and exponential backoff.
+- Startup recovery for missing scheduled queue jobs.
+- Configurable worker concurrency.
 
----
+## Architecture
+
+The application follows a frontend → REST API → backend services → database/queue architecture.
+
+React Frontend
+↓
+Express REST API
+↓
+Backend Controllers
+↓
+Service Layer
+↓
+PostgreSQL + BullMQ
+↓
+Redis
+↓
+Email Worker
+↓
+SMTP Service
+↓
+Ethereal SMTP
+
+PostgreSQL is responsible for persistent application and email delivery state. Redis is used by BullMQ for asynchronous queue processing, delayed jobs, rate limiting, and distributed send-slot coordination. The BullMQ worker processes scheduled jobs and sends emails through the SMTP service.
+
+## Email Scheduling Flow
+
+User creates campaign
+↓
+Frontend validates campaign
+↓
+REST API request
+↓
+Backend validates recipients
+↓
+Email records are stored in PostgreSQL
+↓
+Delayed BullMQ jobs are created
+↓
+Redis stores queue state
+↓
+Scheduled time is reached
+↓
+BullMQ worker processes the job
+↓
+Email is claimed for processing
+↓
+Sender rate limit is checked
+↓
+Sending slot is reserved
+↓
+Email is sent through SMTP
+↓
+PostgreSQL is updated
+↓
+Email is marked as sent
+↓
+Dashboard displays delivery result
+
+## Email State Flow
+
+scheduled → processing → sent
+
+If delivery fails:
+
+processing → failed
+
+Retryable SMTP failures are retried using BullMQ retry attempts and exponential backoff.
 
 ## Project Structure
 
-```
 reachinbox-email-scheduler/
 ├── backend/
 │   ├── src/
-│   │   ├── config/          # DB & Redis connection config
-│   │   ├── controllers/     # Express HTTP route controllers
-│   │   ├── db/              # PostgreSQL migrations & schema
-│   │   ├── routes/          # API route definitions
-│   │   ├── services/        # Email scheduler & repository logic
-│   │   └── workers/         # BullMQ queue processor worker
+│   │   ├── config/          # Database, environment and Redis configuration
+│   │   ├── controllers/     # Express controllers
+│   │   ├── db/              # PostgreSQL database logic
+│   │   ├── middleware/      # Express middleware
+│   │   ├── queues/          # BullMQ queue definitions
+│   │   ├── routes/          # API routes
+│   │   ├── schemas/         # Request/data schemas
+│   │   ├── services/        # Business and email scheduling services
+│   │   ├── types/           # TypeScript types
+│   │   ├── utils/           # Utility functions
+│   │   ├── workers/         # BullMQ email worker
+│   │   ├── app.ts
+│   │   └── server.ts
 │   ├── package.json
 │   └── tsconfig.json
 ├── frontend/
 │   ├── src/
-│   │   ├── components/      # UI Primitives, Dashboard, Tables, Compose Modal
-│   │   ├── context/         # AuthContext & ToastContext
-│   │   ├── services/        # Type-safe API client (api.ts)
-│   │   └── types/           # Shared TypeScript interfaces
+│   │   ├── components/      # UI components and dashboard
+│   │   ├── context/         # Authentication and application context
+│   │   ├── services/        # API services
+│   │   ├── types/           # TypeScript interfaces
+│   │   └── App.tsx
 │   ├── package.json
 │   ├── vite.config.ts
 │   └── tsconfig.json
 └── README.md
-```
 
----
+## Technology Stack
 
-## Quick Start Guide
+Frontend: React, TypeScript, Vite, Tailwind CSS
+
+Backend: Node.js, Express, TypeScript
+
+Database: PostgreSQL
+
+Queue: BullMQ
+
+Queue/Rate Limiting Store: Redis
+
+Email: Ethereal SMTP
+
+Authentication: Google OAuth
+
+Frontend Deployment: Vercel
+
+Backend Deployment: Render
+
+Source Control: GitHub
+
+## Quick Start
 
 ### Prerequisites
-- Node.js (v18+)
-- PostgreSQL database
-- Redis instance
 
-### 1. Backend Setup
+- Node.js 18+
+- PostgreSQL
+- Redis
+- npm
 
-```bash
+### Backend Setup
+
 cd backend
 npm install
-```
 
-Create a `.env` file inside `backend/`:
+Create a .env file inside the backend directory and configure the required environment variables:
 
-```env
 PORT=5000
-DATABASE_URL=postgresql://user:password@localhost:5432/reachinbox
-REDIS_HOST=localhost
-REDIS_PORT=6379
+DATABASE_URL=your_postgresql_connection_string
+REDIS_URL=your_redis_connection_string
 WORKER_CONCURRENCY=5
 EMAIL_DELAY_MS=2000
 MAX_EMAILS_PER_HOUR=200
-```
 
-Run database migrations & start backend server:
+Run the database migration:
 
-```bash
 npm run db:migrate
+
+Start the backend:
+
 npm run dev
-```
 
-The backend server runs at `http://localhost:5000`.
+### Frontend Setup
 
-### 2. Frontend Setup
-
-```bash
 cd frontend
 npm install
-```
 
-Create a `.env` file inside `frontend/` (optional for custom Google Client ID):
+Configure the required frontend environment variables if required:
 
-```env
-VITE_GOOGLE_CLIENT_ID=your_google_oauth_client_id.apps.googleusercontent.com
-```
+VITE_GOOGLE_CLIENT_ID=your_google_client_id
 
-Start the frontend dev server:
+Start the frontend:
 
-```bash
 npm run dev
-```
 
-Access the application in your browser at `http://localhost:3000`.
+## Verification
 
----
+Backend typecheck:
 
-## Verification & Build Commands
+cd backend
+npx tsc --noEmit
 
-### Frontend Typecheck & Production Build
-```bash
+Backend production build:
+
+npm run build
+
+Frontend typecheck:
+
 cd frontend
 npm run typecheck
+
+Frontend production build:
+
 npm run build
-```
 
-### Backend Typecheck
-```bash
-cd backend
-npm run typecheck
-```
+## Demo Flow
 
----
+1. Open the hosted ReachInbox application.
+2. Sign in using Google OAuth or the available evaluator access.
+3. View the ReachInbox dashboard.
+4. Click Compose New Campaign.
+5. Upload a CSV/Text file containing recipient email addresses.
+6. Verify the detected recipient count.
+7. Enter the email subject and body.
+8. Select a future schedule time.
+9. Configure email delay and hourly sending limit.
+10. Schedule the campaign.
+11. Open the Scheduled section and verify the scheduled emails.
+12. When the scheduled time is reached, BullMQ processes the delayed jobs through Redis.
+13. The email worker claims the email, applies rate limiting, and sends the email through SMTP.
+14. Open Sent Logs to view processed email records and delivery status.
+15. Use the Ethereal preview link to inspect the delivered email when available.
 
-## 5-Minute Demo Flow
+## Rate Limiting
 
-1. **Sign In**:
-   - Open `http://localhost:3000`.
-   - Sign in using Google OAuth or click **Continue as Evaluator** for quick access.
-2. **Compose & Upload CSV**:
-   - Click **Compose Email** in the top navigation.
-   - Upload a CSV file containing emails or paste recipient email addresses. Notice the **Detected Email Addresses** counter automatically update.
-   - Fill in Subject, Body, and set the scheduled time to 1 minute in the future.
-   - Click **Schedule Campaign**.
-3. **View Scheduled Emails**:
-   - Navigate to the **Scheduled** tab to see your queued campaign items with status `Scheduled`.
-4. **Monitor Delivery & Sent Logs**:
-   - Once the scheduled time passes, BullMQ processes the queue jobs.
-   - Navigate to the **Sent Logs** tab to view completed email records and click **Ethereal View** to view the rendered email in Ethereal SMTP.
+The system supports configurable hourly email limits using:
+
+MAX_EMAILS_PER_HOUR
+
+Redis is used to coordinate sending slots. A Redis Lua script performs atomic slot reservation so concurrent workers do not exceed the configured sending rate.
+
+## Worker Processing
+
+The email worker uses BullMQ and supports configurable concurrency using:
+
+WORKER_CONCURRENCY=5
+
+A minimum delay between sending operations can be configured using:
+
+EMAIL_DELAY_MS=2000
+
+BullMQ retry attempts and exponential backoff are used for retryable email delivery failures.
+
+## Queue Recovery
+
+When the backend starts, the scheduler checks for scheduled emails whose BullMQ jobs may be missing and attempts to recover those jobs. This helps maintain scheduled email processing after application restarts.
+
+## Deployment
+
+### Frontend
+
+The frontend is deployed on Vercel.
+
+Hosted Application:
+
+https://reachinbox-email-scheduler-nu.vercel.app/
+
+### Backend
+
+The backend is deployed on Render and provides the REST API and background email processing services.
+
+## GitHub Repository
+
+https://github.com/MADASIKURUVADAMODAR/reachinbox-email-scheduler
+
+The repository contains the frontend, backend, database logic, Redis integration, BullMQ queue implementation, email worker, configuration, and documentation.
+
+## Assignment Demo
+
+The demo video demonstrates the working prototype from authentication and dashboard navigation through campaign creation, recipient upload, email scheduling, queue processing, and sent email logs.
+
+The video focuses on both the user-facing functionality and the backend architecture used to implement asynchronous email scheduling.
+
+## Future Improvements
+
+- Dedicated Redis/BullMQ worker deployment.
+- Advanced campaign analytics.
+- Multiple SMTP provider support.
+- Dead-letter queue management.
+- Campaign-level analytics.
+- Email templates.
+- Unsubscribe management.
+- Advanced sender controls.
+- Production monitoring and alerting.
+
+## License
+
+This project was created as part of the Outbox Labs SDE Intern assignment.
